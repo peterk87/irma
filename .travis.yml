@@ -21,6 +21,8 @@ before_script:
   - free -m
   - source activate irmaenv
   - echo "will cite" | parallel --bibtex 1> /dev/null 2> /dev/null &
+  - sed -i 's/SINGLE_LOCAL_PROC=\d+\t/SINGLE_LOCAL_PROC=1\t/' IRMA_RES/defaults.sh
+  - sed -i 's/DOUBLE_LOCAL_PROC=\d+\t/DOUBLE_LOCAL_PROC=1\t/' IRMA_RES/defaults.sh
   - cd tests/
 
 script:
