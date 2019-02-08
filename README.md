@@ -1,5 +1,7 @@
 # IRMA: Iterative Refinement Meta-Assembler
 
+[![Build Status](https://travis-ci.com/peterk87/irma.svg?branch=master)](https://travis-ci.com/peterk87/irma)
+
 *NOTE: This repository is a modified version based on the source code in [IRMA v0.6.7 zip file] from the [IRMA Website]. Binaries that can be downloaded from Conda have been removed.*
 
 
@@ -23,6 +25,15 @@ bash miniconda.sh -b -p $HOME/miniconda
 
 # Download repo
 git clone https://github.com/peterk87/irma.git
+cd irma
+# create IRMA conda env
+conda env create --file=conda_env.yaml
+# activate IRMA conda env
+source activate irmaenv
+# run tests
+cd tests
+./test_run.sh
+# add IRMA and LABEL binary directory to your $PATH
 ```
 
 
@@ -39,6 +50,7 @@ git clone https://github.com/peterk87/irma.git
 
 
 
+
 [IRMA manuscript]: https://bmcgenomics.biomedcentral.com/articles/10.1186/s12864-016-3030-6
 [IRMA Website]: https://wonder.cdc.gov/amd/flu/irma/
 [IRMA v0.6.7 zip file]: https://wonder.cdc.gov/amd/flu/irma/flu-amd-201704.zip
@@ -48,3 +60,4 @@ git clone https://github.com/peterk87/irma.git
 [SSW]: http://journals.plos.org/plosone/article?id=10.1371/journal.pone.0082138
 [samtools]: http://www.htslib.org/
 [GNU Parallel]: https://www.gnu.org/software/parallel/
+[Shogun Toolbox]: http://shogun.ml/
