@@ -4,13 +4,13 @@ channels:
   - bioconda
   - defaults
 dependencies:
-  - bash=4.4.18=h67949de_1000
-  - perl=5.26.2=h14c3975_1000
-  - r-base=3.5.1=he45234b_1005
-  - parallel=20190122=0
-  - zip=3.0=0
-  - pigz=2.3.4=0
-  - fasttree=2.1.10=h470a237_2
-  - mafft=7.407=0
-  - samtools=1.9=h8ee4bcc_1
-  - blat=36=0
+  - bash >=4.4.18
+  - perl >=5.26.2
+  - r-base >=3.5.1
+  - parallel >=20170422
+  - zip >=3.0
+  - pigz >=2.3.4
+  - fasttree >=2.1.10
+  - mafft >=7.407
+  - samtools >=1.9
+  - blat >=36
