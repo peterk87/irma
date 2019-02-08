@@ -25,7 +25,7 @@ while($record = <REF>) {
 close(REF);
 if ( !defined($N) ) { die("ERROR: no reference found in $ARGV[0].\n"); }
 
-if ( $ignoreAnnotation && $REF_NAME =~ /^([^{]+){[^}]*}/  ) {
+if ( $ignoreAnnotation && $REF_NAME =~ /^([^\{]+)\{[^\}]*\}/  ) {
 	$REF_NAME = $1;
 }
 
@@ -39,7 +39,7 @@ while($line=<SAM>) {
 
 	($qname,$flag,$rname,$pos,$mapq,$cigar,$mrnm,$mpos,$isize,$seq,$qual) = split("\t",$line);
 	if ( $cigar eq '*' ) { next; }
-	if ( $ignoreAnnotation && $rname =~ /^([^{]+){[^}]*}/  ) { $rname = $1; }
+	if ( $ignoreAnnotation && $rname =~ /^([^\{]+)\{[^\}]*\}/  ) { $rname = $1; }
 
 	if ( $REF_NAME eq $rname ) {
 		$seq = uc($seq);

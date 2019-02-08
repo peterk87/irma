@@ -1,4 +1,12 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+err_report() {
+  echo -e "\e[1m\e[31mError on line $(caller)\e[0m" >&2
+}
+
+trap "err_report" ERR
+
 PROGRAM="Iterative Refinement Meta-Assembler (IRMA)"
 AUTHOR="Samuel S. Shepard"
 EMAIL="vfn4@cdc.gov"
@@ -31,23 +39,9 @@ else
 fi
 
 #### UTILITY FUNCTIONS ####
-# FNC - ERROR TEST #
-# Idea courtesy: steve-parker.org/sh/exitcodes.shtml
-function err_test() {
-	if [ "$1" -ne "0" ];then
-		echo ""
-		if [ $# -eq "1" ]; then 
-			echo "$(basename $0) ERROR: operations have been ABORTED!"
-		else
-			echo "$(basename $0) ERROR ($2): operations have been ABORTED!"
-		fi
-		exit 1
-	fi
-}
-
 function time_stamp() {
 	local t=$(date +"%Y-%m-%d %k:%M:%S")
-	echo -e "[$t]\tIRMA/$MODULE_CONFIG $1"
+	echo -e "[$t]\t\e[35mIRMA/$MODULE_CONFIG\e[0m $1"
 }
 ###########################
 
@@ -55,8 +49,8 @@ function time_stamp() {
 OS="Linux"
 command -v uname >/dev/null 2>&1 && OS=$(uname -s)
 if [ "$OS" != "Linux" -a "$OS" != "Darwin" ];then
-	time_stamp "Your $OS OS not yet supported."
-	exit 0
+	time_stamp "\e[31m\e[1mYour $OS OS not yet supported.\e[0m"
+	exit 1
 fi
 
 R=1			# current round
@@ -90,12 +84,21 @@ fi
 check_prgm Rscript
 check_prgm perl
 
-PARALLEL="$spath/parallel --will-cite"
-SAMTOOLS=$spath/samtools_$OS
-BLAT=$spath/blat_$OS
+
+check_prgm parallel
+SAMTOOLS=samtools
+check_prgm $SAMTOOLS
+BLAT=blat
+check_prgm $BLAT
 SSW=$spath/ssw_$OS
+# SSW=ssw_test
+check_prgm $SSW
 A2M=$Lspath/align2model_$OS
+check_prgm $A2M
 RSCRIPT="$(which Rscript) --vanilla"
+check_prgm gzip
+check_prgm pigz
+ZIP="pigz -p $(nproc)"
 
 # select cat for reading reads
 if [ "${#LEFT}" -gt "2" ];then
@@ -114,7 +117,7 @@ if [ ! -d "$rpath/modules/$MODULE" ];then
 	echo "IRMA ERROR: $MODULE not found."
 	exit 1
 else
-	mpath=$rpath/modules/$MODULE	
+	mpath=$rpath/modules/$MODULE
 fi
 
 # load reference dataset paths
@@ -154,17 +157,6 @@ else
 fi
 REF1_SET=$REF_SET
 
-# selection of zip utility
-if command -v $spath/pigz_$OS >/dev/null 2>&1;then
-	ZIP="$spath/pigz_$OS -p $DOUBLE_LOCAL_PROC"
-elif command -v pigz >/dev/null 2>&1;then
-	ZIP="pigz -p $DOUBLE_LOCAL_PROC"
-elif command -v gzip >/dev/null 2>&1;then
-	ZIP="gzip"
-else
-	check_prgm gzip
-fi
-
 # process seed reference library
 if [ ! -s "$REF_SET" ];then
 	echo "IRMA ERROR! The REF_SET data was not found for: $REF_SET"
@@ -192,7 +184,9 @@ if [ "$MAX_ROUNDS" -eq "1" -a "$ASSEM_REF" -eq "1" ];then
 fi
 
 # define ppath
-TOKEN=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
+# echo -e "\e[34mGenerating Random Token!\e[0m"
+# TOKEN=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
+TOKEN=$(uuidgen)
 if [ "$ALLOW_TMP" -eq "1" -a "$GRID_ON" -eq "0" ];then
 	ppath=$TMP/$(whoami)/IRMAv$VERSION/${RUN}-${TOKEN}
 else
@@ -272,7 +266,7 @@ function doBLAT() {
 	local procs=$6
 	local limit=$7
 	local doGrid=0
-	local script=$workdir/${prefix}-${name}-BLAT
+	local script=$workdir/${prefix}-${name}-BLAT.sh
 	local n=$(grep '>' $queryDB -c)
 
 	if [ "$n" -gt "$limit" -a "$GRID_ON" -eq "1" ];then
@@ -297,8 +291,11 @@ function doBLAT() {
 	[ "$SKIP_E" -eq "1" ] && options+=" -S"
 
 ###
-cat >${script}.sh  <<EOL
-#!/bin/bash
+cat >$script  <<EOF
+#!/usr/bin/env bash
+
+set -Eeuxo pipefail
+
 LANG=$LANG
 shopt -u nocaseglob;shopt -u nocasematch
 
@@ -312,22 +309,22 @@ OUTPUT=$workdir/${prefix}-${name}_\$ID.blat
 
 $BLAT $refDB \$INPUT \$OUTPUT $BLAT_OPTS
 $spath/parseBlat.pl \$OUTPUT \$INPUT $options -P $prefix
-EOL
+EOF
 ###
-	chmod 755 ${script}.sh
+	chmod 755 $script
 	$Lspath/interleavedSamples.pl -G $procs $queryDB $workdir/$prefix-$name > /dev/null 2>&1
 	if [ "$doGrid" -eq "1" ];then
-		qsub $IRMA_QUEUE -t 1-$procs:1 -N ${prefix}-${name}-BLAT -sync y -wd $workdir -j y -o ${script}.o ${script}.sh > /dev/null 2>&1
+		qsub $IRMA_QUEUE -t 1-$procs:1 -N ${prefix}-${name}-BLAT -sync y -wd $workdir -j y -o $script.o $script > /dev/null 2>&1
 		if [ "$?" -ne "0" ];then
 			time_stamp "qsub of '${prefix}-${name}-BLAT' failed. Switching to master node."
-			$PARALLEL --workdir $workdir -j $SINGLE_LOCAL_PROC ${script}.sh {} ::: $(seq $procs) > /dev/null 2>&1
+			parallel --workdir $workdir -j $SINGLE_LOCAL_PROC $script {} ::: $(seq $procs) > /dev/null 2>&1
 		else
-			rm ${script}.o
+			rm $script.o
 		fi
-	else 
-		$PARALLEL --workdir $workdir -j $procs ${script}.sh {} ::: $(seq $procs) > /dev/null 2>&1
+	else
+		parallel --workdir $workdir -j $procs  $script {} ::: $(seq $procs) > /dev/null 2>&1
 	fi
-	rm ${script}.sh
+	rm $script
 }
 
 function doMATCH() {
@@ -436,7 +433,9 @@ function doSORT() {
 		exit
 	fi
 
-	x=$(grep UNRECOGNIZABLE $sortp/$prefix/SORT_result.txt -c)
+	set +o pipefail
+	x=$(grep UNRECOGNIZABLE $sortp/$prefix/SORT_result.txt -c) || true
+	set -o pipefail
 	y=$(wc -l < $sortp/$prefix/SORT_result.txt)
 	if [ $x -gt 0 -a $x -eq $y ];then
 		time_stamp "$prefix found no significant reads"
@@ -468,7 +467,7 @@ function doSAM() {
 	local limit=$6
 	local doGrid=0
 	local mod=$phmms/${name}_hmm.mod
-	local script=$workdir/$prefix-$name-SAM
+	local script=$workdir/$prefix-$name-SAM.sh
 	local n=$(grep '>' $queryDB -c)
 
 	if [ "$n" -gt "$limit" -a "$GRID_ON" -eq "1" ];then
@@ -482,8 +481,11 @@ function doSAM() {
 	local options=""
 	[ "$SKIP_E" -eq "1" ] && options+="-S"
 			
-cat >${script}.sh  <<EOL
-#!/bin/bash
+cat > $script  <<EOF
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
 LANG=$LANG
 shopt -u nocaseglob;shopt -u nocasematch
 
@@ -498,22 +500,22 @@ MOD=$mod
 
 $A2M \$RUN -modelfile \$MOD -db \$DB
 $spath/a2mToMatchStats.pl \$RUN.a2m \$RUN.sto $options
-EOL
+EOF
 
-	chmod 755 ${script}.sh
+	chmod 755 $script
 	$Lspath/interleavedSamples.pl $queryDB $workdir/$prefix-$name -G $procs > /dev/null
 	if [ "$doGrid" -eq "1" ];then
-		qsub $IRMA_QUEUE -t 1-$procs:1 -N $prefix-$name-SAM -sync y -wd $workdir -j y -o ${script}.o ${script}.sh > /dev/null 2>&1
+		qsub $IRMA_QUEUE -t 1-$procs:1 -N $prefix-$name-SAM -sync y -wd $workdir -j y -o $script.o $script > /dev/null 2>&1
 		if [ "$?" -ne "0" ];then
 			time_stamp "qsub of '${prefix}-${name}-SAM' failed. Switching to master node."
-			$PARALLEL --workdir $workdir -j $SINGLE_LOCAL_PROC ${script}.sh {} ::: $(seq $procs) > /dev/null 2>&1
+			parallel --workdir $workdir -j $SINGLE_LOCAL_PROC $script {} ::: $(seq $procs) > /dev/null 2>&1
 		else
-			rm ${script}.o
+			rm $script.o
 		fi
 	else
-		$PARALLEL --workdir $workdir -j $procs ${script}.sh {} ::: $(seq $procs) > /dev/null 2>&1
+		parallel -j $procs --workdir $workdir  $script {} ::: $(seq $procs) > /dev/null 2>&1
 	fi
-	rm $workdir/${prefix}-${name}_????.{fasta,a2m} ${script}.sh
+	rm $workdir/${prefix}-${name}_????.{fasta,a2m} $script
 }
 
 function doALIGN() {
@@ -557,7 +559,7 @@ function doALIGN() {
 	local options="-C $MIN_CA -F $MIN_FA"
 	[ "$ALIGN_PROG" == "BLAT" ] && options+=" -A"
 	[ "$SKIP_E" -eq "1" ] && options+=" -S" 
-	[ "$DENOM" != "" ] && options+=" -O $DENOM"
+	# [ "$DENOM" != "" ] && options+=" -O $DENOM"
 	if [ "$ALIGN_PROG" != "NONE" ];then
 		for i in $sortp/$prefix-*.fa;do
 			name=$(basename $i .fa)
@@ -701,14 +703,17 @@ function ASSEM_RUN_SSW() {
 	local ref=$3
 	local procs=$4
 	local doGrid=$5
-	local script=$assemp/F${iter}-${gene}
+	local script=$assemp/F${iter}-${gene}.sh
 
 	local options=""
 	[ "$ASSEM_REF" -eq "1" ] && options+=" -G"
 
 ###
-cat > ${script}.sh  <<EOL
-#!/bin/bash
+cat > $script <<EOF
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
 LANG=$LANG
 shopt -u nocaseglob;shopt -u nocasematch
 
@@ -724,24 +729,24 @@ STAT=$assemp/F${iter}-${gene}-\$ID.sto
 $SSW -s -c -h -r $SSW_OPTS $ref \$FASTQ > \$SAM 2> /dev/null
 $spath/winnowSAM.pl -I \$SAM
 $spath/samStats.pl $options $ref \$SAM \$STAT
-EOL
+EOF
 ###
 
 	# ASSEMBLE on grid vs local
-	chmod 755 ${script}.sh
+	chmod 755 $script
 	if [ "$doGrid" -eq "1" ];then
-		qsub $IRMA_QUEUE -t 1-$procs:1 -N F${iter}-$gene -sync y -wd $assemp -j y -o ${script}.o ${script}.sh > /dev/null 2>&1
+		qsub $IRMA_QUEUE -t 1-$procs:1 -N F${iter}-$gene -sync y -wd $assemp -j y -o $script.o $script > /dev/null 2>&1
 		if [ "$?" -ne "0" ];then
 			time_stamp "qsub of 'F${iter}-$gene' failed. Switching to master node."
-			$PARALLEL --workdir $ppath -j $SINGLE_LOCAL_PROC ${script}.sh {} ::: $(seq $procs)
+			parallel --workdir $ppath -j $SINGLE_LOCAL_PROC $script {} ::: $(seq $procs)
 		else
-			rm ${script}.o
+			rm $script.o
 		fi
 	else
-		$PARALLEL --workdir $ppath -j $procs ${script}.sh {} ::: $(seq $procs)
+		parallel --workdir $ppath -j $procs $script {} ::: $(seq $procs)
 	fi
 	$spath/catSAMfiles.pl $assemp/F${iter}-${gene}-*.sam > $assemp/F${iter}-$gene.sam
-	rm ${script}.sh
+	rm $script
 }
 
 
@@ -780,8 +785,11 @@ function doCALLS() {
 #########################################
 # DO CALL STATS and MERGE if PAIRED END #
 #########################################
-cat > ${script}.sh <<EOL
-#!/bin/bash
+cat > ${script}.sh <<EOF
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
 LANG=$LANG
 shopt -u nocaseglob;shopt -u nocasematch
 
@@ -802,7 +810,7 @@ else
 	$spath/varCallStats.pl $ref \$SAM \$VPREFIX
 fi
 
-EOL
+EOF
 #########################################
 
 	# GRID vs LOCAL execution of the CALL STATS step, inherits from ASSEMBLY step currently
@@ -811,12 +819,12 @@ EOL
 		qsub $IRMA_QUEUE -t 1-$procs:1 -N $prefix -sync y -wd $assemp -j y -o ${script}.o ${script}.sh > /dev/null 2>&1
 		if [ "$?" -ne "0" ];then
 			time_stamp "qsub of '${prefix}' failed. Switching to master node."
-			$PARALLEL --workdir $ppath -j $SINGLE_LOCAL_PROC ${script}.sh {} ::: $(seq $procs)
+			parallel --workdir $ppath -j $SINGLE_LOCAL_PROC ${script}.sh {} ::: $(seq $procs)
 		else
 			rm ${script}.o
 		fi
 	else
-		$PARALLEL --workdir $ppath -j $procs ${script}.sh {} ::: $(seq $procs)
+		parallel --workdir $ppath -j $procs ${script}.sh {} ::: $(seq $procs)
 	fi
 	rm ${script}.sh
 
@@ -857,8 +865,11 @@ function doPHASING() {
 #########################################
 # DO PHASING			        #
 #########################################
-cat > ${script}.sh <<EOL
-#!/bin/bash
+cat > ${script}.sh <<EOF
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
 LANG=$LANG
 shopt -u nocaseglob;shopt -u nocasematch
 
@@ -871,7 +882,7 @@ PATS=$final-pats.sto
 VARS=$final-vars.sto
 
 $spath/phase.pl $final \$VARS \$PATS -A $procs -I \$ID
-EOL
+EOF
 #########################################
 
 	chmod 755 ${script}.sh
@@ -879,12 +890,12 @@ EOL
 		qsub $IRMA_QUEUE -t 1-$procs:1 -N ${gene}-phasing -sync y -wd $ppath -j y -o ${script}.o ${script}.sh > /dev/null 2>&1
 		if [ "$?" -ne "0" ];then
 			time_stamp "qsub of '${gene}-phasing' failed. Switching to master node."
-			$PARALLEL --workdir $ppath -j $SINGLE_LOCAL_PROC ${script}.sh {} ::: $(seq $procs) > /dev/null 2>&1
+			parallel --workdir $ppath -j $SINGLE_LOCAL_PROC ${script}.sh {} ::: $(seq $procs) > /dev/null 2>&1
 		else
 			rm ${script}.o
 		fi
 	else 
-		$PARALLEL --workdir $ppath -j $procs ${script}.sh {} ::: $(seq $procs) > /dev/null 2>&1
+		parallel --workdir $ppath -j $procs ${script}.sh {} ::: $(seq $procs) > /dev/null 2>&1
 	fi
 	rm ${final}-pats.sto ${final}-vars.sto ${script}.sh
 
@@ -894,7 +905,7 @@ EOL
 		$spath/completeMatrix.pl $final-${i}.sqm
 		rm ${final}-*-${i}.sqm
 	done
-	$PARALLEL --workdir $ppath $RSCRIPT $spath/sqmHeatmap.R ${final}-{}.sqm ${final}-{}.pdf 2 ::: EXPENRD JACCARD MUTUALD NJOINTP > /dev/null
+	parallel --workdir $ppath $RSCRIPT $spath/sqmHeatmap.R ${final}-{}.sqm ${final}-{}.pdf 2 ::: EXPENRD JACCARD MUTUALD NJOINTP > /dev/null
 }
 
 function REFINE_ASSEMBLY_CALL_VARIANTS() {
@@ -902,7 +913,7 @@ function REFINE_ASSEMBLY_CALL_VARIANTS() {
 	local procs=$2
 	local doGrid=$3
 	local final=$4
-	
+
 	if [ "$ASSEM_PROG" == "SSW" ];then
 		local ASSEM_FUNCTION="ASSEM_RUN_SSW"
 		local ASSEM_SCORE="ASSEM_SCORE_SSW"
@@ -929,11 +940,13 @@ function REFINE_ASSEMBLY_CALL_VARIANTS() {
 		$ASSEM_FUNCTION $iter $gene $theRef $procs $doGrid
 
 		# convert SAM to BAM
-		theSAM=$assemp/F${iter}-$gene.sam;theBAM=$assemp/F${iter}-$gene.bam
-		$SAMTOOLS view -bS $theSAM > $theBAM 2> /dev/null
+		theSAM=$assemp/F${iter}-$gene.sam
+		theBAM=$assemp/F${iter}-$gene.bam
+		samtools view -bS $theSAM > $theBAM
 
 		# save last score & take current score
-		lastScore=$currentScore;currentScore=$($ASSEM_SCORE $theSAM)
+		lastScore=$currentScore
+		currentScore=$($ASSEM_SCORE $theSAM)
 		echo -e "$currentScore\t$theSAM" >> $log
 
 		theStats=$assemp/F${iter}-$gene-*.sto
@@ -952,12 +965,12 @@ function REFINE_ASSEMBLY_CALL_VARIANTS() {
 	done
 
 	# CALL variants
-	if [ "$iter" -gt "$MAX_ITER_ASSEM" ];then
+	if [ "$iter" -gt "$MAX_ITER_ASSEM" ]; then
 		((iter--))
 		doCALLS $MAX_ITER_ASSEM $gene $final $procs $doGrid
 	else
-		if [ "$lastScore" -gt "$currentScore" ];then
-			rm $theRef $theSAM $theBAM			
+		if [ "$lastScore" -gt "$currentScore" ]; then
+			rm $theRef $theSAM $theBAM
 			((iter--))
 		fi
 		doCALLS $iter $gene $final $procs $doGrid
@@ -966,7 +979,7 @@ function REFINE_ASSEMBLY_CALL_VARIANTS() {
 	# CLEAN UP
 	rm $assemp/${gene}_????.fastq
 	rm $assemp/*-${gene}-????.*
-	return $iter
+	last_iter=$iter
 }
 
 function ASSEMBLE_REPORT() {
@@ -998,13 +1011,13 @@ function ASSEMBLE_REPORT() {
 		$Lspath/interleavedSamples.pl -G $procs -Q $fastq $assemp/$gene > /dev/null
 	fi
 	time_stamp "started $gene ($size)"
+	
 	REFINE_ASSEMBLY_CALL_VARIANTS $gene $procs $doGrid $final
-	last_iter=$?	
 	doPHASING $gene $final
 
 	local n=$(wc -l < ${final}-variants.txt)
 	if [ "$n" -gt "2" ]; then
-		$PARALLEL $RSCRIPT $spath/sqmHeatmap.R ${final}-{}.sqm ${final}-{}.pdf 2 ::: EXPENRD JACCARD MUTUALD NJOINTP > /dev/null
+		parallel $RSCRIPT $spath/sqmHeatmap.R ${final}-{}.sqm ${final}-{}.pdf 2 ::: EXPENRD JACCARD MUTUALD NJOINTP > /dev/null
 	fi
 
 	if [ "$n" -gt "1" ]; then
@@ -1025,9 +1038,8 @@ function ASSEMBLE_REPORT() {
 		$spath/vcfGenerator.pl $options ${final}.fasta ${final}-allAlleles.txt ${final}-insertions.txt ${final}-deletions.txt > ${final}.vcf
 	fi
 
-	$SAMTOOLS view -bS ${final}.sam > ${final}.bam 2> /dev/null
-	$SAMTOOLS sort ${final}.bam $final > /dev/null 2>&1
-	$SAMTOOLS index ${final}.bam > /dev/null 2>&1
+	samtools view -@ $procs -bS ${final}.sam | samtools sort -@ $procs > ${final}.bam
+	samtools index ${final}.bam
 	rm $assemp/F*-$gene.sam
 	time_stamp "finished $gene (F$last_iter)"
 }
@@ -1093,9 +1105,10 @@ function doPostProcessing() {
 	echo -e "1-initial\t${raw1}\tNA\tNA" >> $ppath/READ_COUNTS.txt
 	echo -e "2-failQC\t${raw3}\tNA\tNA" >> $ppath/READ_COUNTS.txt
 	echo -e "2-passQC\t${raw}\t${pats}\tNA" >> $ppath/READ_COUNTS.txt
-	
+	set +o pipefail
 	read raw1 pats1 <<<$(grep '>' $matchp/*.chim|cut -f2 -d'%'|$spath/sumField.pl -S)
 	read raw2 pats2 <<<$(grep '>' $matchp/R${LAST_ROUND}.nomatch|cut -f2 -d'%'|$spath/sumField.pl -S)
+	set -o pipefail
 	echo -e "3-chimeric\t${raw1}\t${pats1}\tNA" >> $ppath/READ_COUNTS.txt
 	echo -e "3-nomatch\t${raw2}\t${pats2}\tNA" >> $ppath/READ_COUNTS.txt
 
@@ -1123,7 +1136,7 @@ function doPostProcessing() {
 	wait
 	time_stamp 'mapped to references, BAM files created'
 
-	for i in $ppath/*bam;do
+	for i in $ppath/*bam; do
 		pairs=$($SAMTOOLS view -c $i)
 		gene=$(basename $i .bam)
 		read raw pats <<<$(grep '>' $assemp/${gene}.fa|cut -f2 -d'%'|$spath/sumField.pl -S)
@@ -1165,7 +1178,7 @@ function doPostProcessing() {
 		done
 	
 		# alternative counts
-		for gene in $($PARALLEL echo  {/.} ::: $ppath/secondary/*.fa|cut -f2- -d'-'|sort|uniq|grep -v UNRECOGNIZABLE);do
+		for gene in $(parallel echo  {/.} ::: $ppath/secondary/*.fa|cut -f2- -d'-'|sort|uniq|grep -v UNRECOGNIZABLE);do
 			read raw pats <<<$(grep -h '>' $ppath/secondary/*-${gene}.fa|cut -f2 -d'%'|$spath/sumField.pl -S)
 			echo -e "5-$gene\t${raw}\t${pats}\tNA" >> $ppath/READ_COUNTS.txt.tmp
 		done 
@@ -1249,14 +1262,14 @@ function setPrograms() {
 time_stamp "started run '$RUN'"
 if [ "$PAIRED" -eq "1" ];then
 	$spath/xflate.pl -C -Q -L INTER $ppath/R0.xfl \
-		<($CAT < $LEFT|$PARALLEL --pipe -L4 -j$DOUBLE_LOCAL_PROC $spath/fastQ_converter.pl $FASTQ_CONV_OPTS -G $ppath/LEFT.log -g {#}) \
-		<($CAT < $RIGHT|$PARALLEL --pipe -L4 -j$DOUBLE_LOCAL_PROC $spath/fastQ_converter.pl $FASTQ_CONV_OPTS -G $ppath/RIGHT.log -g {#}) \
+		<($CAT < $LEFT|parallel --pipe -L4 -j$DOUBLE_LOCAL_PROC $spath/fastQ_converter.pl $FASTQ_CONV_OPTS -G $ppath/LEFT.log -g {#}) \
+		<($CAT < $RIGHT|parallel --pipe -L4 -j$DOUBLE_LOCAL_PROC $spath/fastQ_converter.pl $FASTQ_CONV_OPTS -G $ppath/RIGHT.log -g {#}) \
 		> $ppath/R0.fa
 	cat $ppath/{LEFT,RIGHT}.log > $ppath/QC_log.txt && rm $ppath/{LEFT,RIGHT}.log
 	time_stamp 'pre-processed'
 else
 	$spath/xflate.pl -C -Q -L INTER $ppath/R0.xfl \
-		<($CAT < $LEFT|$PARALLEL --pipe -L4 -j$SINGLE_LOCAL_PROC $spath/fastQ_converter.pl $FASTQ_CONV_OPTS -G $ppath/QC_log.txt -g {#}) \
+		<($CAT < $LEFT|parallel --pipe -L4 -j$SINGLE_LOCAL_PROC $spath/fastQ_converter.pl $FASTQ_CONV_OPTS -G $ppath/QC_log.txt -g {#}) \
 		> $ppath/R0.fa
 	time_stamp 'pre-processed'
 fi
@@ -1326,6 +1339,6 @@ done
 doPostProcessing
 
 moveProject
-time_stamp 'finished!'
+time_stamp '\e[32m\e[1mfinished!\e[0m'
 exit 0
 ### END ###

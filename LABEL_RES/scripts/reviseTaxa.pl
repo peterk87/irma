@@ -152,15 +152,15 @@ foreach $record ( @records ) {
 	# Check for prefix or suffix
 	if ( (defined($prefix) || defined($suffix)) && !$matchFiles ) {
 		if ( defined($prevInfix) ) {
-			$id =~ s/{(.+?)}{/{$prefix$1$suffix}{/;
+			$id =~ s/\{(.+?)\}\{/{$prefix$1$suffix}{/;
 		} else {
-			$id =~ s/{(.+?)}/{$prefix$1$suffix}/;
+			$id =~ s/\{(.+?)\}/{$prefix$1$suffix}/;
 		}
 	}
 
 
 	if ( $matchFiles ) {
-		if ( $id =~ /{(.+?)}/ ) {
+		if ( $id =~ /\{(.+?)}/ ) {
 			$match{$1} = 1;
 		}
 	} elsif ( $inPlace ) {

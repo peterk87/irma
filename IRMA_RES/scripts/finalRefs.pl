@@ -25,11 +25,11 @@ foreach $file ( @ARGV ) {
 			next;
 		}
 
-		if ( $excludeAlt && $gene =~ /{alt}/ ) {
+		if ( $excludeAlt && $gene =~ /\{alt}/ ) {
 			next;
 		}
 
-		if ( $ignoreAnnotation && $gene =~ /^([^{]+){[^}]*}/  ) {
+		if ( $ignoreAnnotation && $gene =~ /^([^\{]+)\{[^\}]*\}/  ) {
 			$gene = $1;
 		}
 

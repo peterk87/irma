@@ -1,3 +1,11 @@
 .DS_Store
 .commit
 *.bak
+*.swp
+
+# ignore test results
+tests/label-test.zip
+tests/label-test_final.txt
+tests/irma-test
+tests/irma-test-*
+tests/irma-test/*
