@@ -16,10 +16,12 @@ install:
   # create conda env
   - conda env create --file=conda_env.yaml
 
-script:
-  - source activate irmaenv
-  - parallel --citation &> /dev/null
+before_script:
   - nproc
   - free -m
+  - source activate irmaenv
+  - parallel --citation
   - cd tests/
+
+script:
   - ./test_run.sh
