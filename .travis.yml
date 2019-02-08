@@ -20,7 +20,7 @@ before_script:
   - nproc
   - free -m
   - source activate irmaenv
-  - parallel --citation
+  - echo 'will cite' | parallel --citation &> /dev/null
   - cd tests/
 
 script:
