@@ -18,5 +18,8 @@ install:
 
 script:
   - source activate irmaenv
+  - parallel --citation &> /dev/null
+  - nproc
+  - free -m
   - cd tests/
   - ./test_run.sh
